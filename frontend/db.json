@@ -1,0 +1,199 @@
+{
+  "hero": {
+    "label": "NEW COLLECTION 2025",
+    "headline": "Elevate Your Style",
+    "subheadline": "Modern fashion for men and women with a refined golden identity.",
+    "image": "https://images.unsplash.com/photo-1761522001763-c45e3e0d2377?ixlib=rb-4.1.0&q=80&w=1080"
+  },
+  "heroSlides": [
+    {
+      "id": 1,
+      "label": "NEW COLLECTION 2025",
+      "headline": "Elevate Your Style",
+      "subheadline": "Modern fashion for men and women with a refined golden identity.",
+      "image": "https://images.unsplash.com/photo-1761522001763-c45e3e0d2377?ixlib=rb-4.1.0&q=80&w=1080",
+      "ctaPrimary": "Shop New Collection",
+      "ctaSecondary": "Explore Best Sellers"
+    },
+    {
+      "id": 2,
+      "label": "SUMMER EDIT",
+      "headline": "Golden Hour",
+      "subheadline": "Embrace the warmth with our exclusive summer pieces.",
+      "image": "https://images.unsplash.com/photo-1631467375913-2cc3d64c5ad2?ixlib=rb-4.1.0&q=80&w=1080",
+      "ctaPrimary": "View Summer Edit",
+      "ctaSecondary": "Shop Dresses"
+    },
+    {
+      "id": 3,
+      "label": "ACCESSORIES",
+      "headline": "Refined Details",
+      "subheadline": "Complete your look with our handcrafted accessories.",
+      "image": "https://images.unsplash.com/photo-1758542988969-39a10168b2ce?ixlib=rb-4.1.0&q=80&w=1080",
+      "ctaPrimary": "Shop Accessories",
+      "ctaSecondary": "View Lookbook"
+    }
+  ],
+  "categories": [
+    {
+      "id": 1,
+      "name": "Women",
+      "image": "https://images.unsplash.com/photo-1631467375913-2cc3d64c5ad2?ixlib=rb-4.1.0&q=80&w=1080"
+    },
+    {
+      "id": 2,
+      "name": "Men",
+      "image": "https://images.unsplash.com/photo-1761522001672-5f1d45ce1b10?ixlib=rb-4.1.0&q=80&w=1080"
+    },
+    {
+      "id": 3,
+      "name": "Accessories",
+      "image": "https://images.unsplash.com/photo-1758542988969-39a10168b2ce?ixlib=rb-4.1.0&q=80&w=1080"
+    },
+    {
+      "id": 4,
+      "name": "New Arrivals",
+      "image": "https://images.unsplash.com/photo-1667382782922-97fa624fafac?ixlib=rb-4.1.0&q=80&w=1080"
+    }
+  ],
+  "products": [
+    {
+      "id": 1,
+      "categoryId": 1,
+      "name": "The Silk Blazer",
+      "price": 890,
+      "currency": "$",
+      "image": "https://images.unsplash.com/photo-1673710672680-944563ff9cce?ixlib=rb-4.1.0&q=80&w=1080",
+      "tag": "Best Seller",
+      "description": "Crafted from the finest Italian silk, this blazer redefines modern luxury. Its structured silhouette is softened by the fluid drape of the fabric, making it a versatile piece for both day and evening wear. Finished with gold-plated buttons.",
+      "images": [
+        "https://images.unsplash.com/photo-1673710672680-944563ff9cce?ixlib=rb-4.1.0&q=80&w=1080",
+        "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?ixlib=rb-4.1.0&q=80&w=1080",
+        "https://images.unsplash.com/photo-1548624149-f321c7512302?ixlib=rb-4.1.0&q=80&w=1080"
+      ],
+      "sizes": ["XS", "S", "M", "L", "XL"],
+      "colors": [
+        { "name": "Cream", "value": "#F5F5DC" },
+        { "name": "Black", "value": "#000000" }
+      ],
+      "details": [
+        "100% Mulberry Silk",
+        "Gold-plated hardware",
+        "Dry clean only",
+        "Made in Italy"
+      ]
+    },
+    {
+      "id": 2,
+      "categoryId": 2,
+      "name": "Noir Trench Coat",
+      "price": 1250,
+      "currency": "$",
+      "image": "https://images.unsplash.com/photo-1632573801508-4ede5a46c4d8?ixlib=rb-4.1.0&q=80&w=1080",
+      "tag": "New",
+      "description": "A timeless classic reimagined for the modern wardrobe. The Noir Trench Coat features a water-resistant cotton gabardine construction with a relaxed fit. The oversized lapels and belted waist create a dramatic silhouette.",
+      "images": [
+        "https://images.unsplash.com/photo-1632573801508-4ede5a46c4d8?ixlib=rb-4.1.0&q=80&w=1080",
+        "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?ixlib=rb-4.1.0&q=80&w=1080"
+      ],
+      "sizes": ["S", "M", "L"],
+      "colors": [
+        { "name": "Black", "value": "#000000" },
+        { "name": "Beige", "value": "#D2B48C" }
+      ],
+      "details": [
+        "100% Cotton Gabardine",
+        "Water-resistant",
+        "Belted waist",
+        "Made in UK"
+      ]
+    },
+    {
+      "id": 3,
+      "categoryId": 1,
+      "name": "Golden Hour Dress",
+      "price": 680,
+      "currency": "$",
+      "image": "https://images.unsplash.com/photo-1753711066670-ef1ba548ecbe?ixlib=rb-4.1.0&q=80&w=1080",
+      "tag": null,
+      "description": "Radiate confidence in the Golden Hour Dress. This floor-length gown features a plunging neckline and a thigh-high slit. The shimmering fabric catches the light with every movement.",
+      "images": [
+        "https://images.unsplash.com/photo-1753711066670-ef1ba548ecbe?ixlib=rb-4.1.0&q=80&w=1080",
+        "https://images.unsplash.com/photo-1595777457583-95e059d581b8?ixlib=rb-4.1.0&q=80&w=1080"
+      ],
+      "sizes": ["XS", "S", "M", "L"],
+      "colors": [
+        { "name": "Gold", "value": "#FFD700" },
+        { "name": "Silver", "value": "#C0C0C0" }
+      ],
+      "details": [
+        "Metallic knit fabric",
+        "Fully lined",
+        "Hidden back zipper",
+        "Made in France"
+      ]
+    },
+    {
+      "id": 4,
+      "categoryId": 3,
+      "name": "Urban Leather Bag",
+      "price": 950,
+      "currency": "$",
+      "image": "https://images.unsplash.com/photo-1758542988969-39a10168b2ce?ixlib=rb-4.1.0&q=80&w=1080",
+      "tag": null,
+      "description": "The ultimate city companion. This structured leather bag features a spacious interior and a sleek, minimalist design. The gold hardware adds a touch of luxury to this everyday essential.",
+      "images": [
+        "https://images.unsplash.com/photo-1758542988969-39a10168b2ce?ixlib=rb-4.1.0&q=80&w=1080",
+        "https://images.unsplash.com/photo-1584917865442-de89df76afd3?ixlib=rb-4.1.0&q=80&w=1080"
+      ],
+      "sizes": ["One Size"],
+      "colors": [
+        { "name": "Black", "value": "#000000" },
+        { "name": "Brown", "value": "#8B4513" }
+      ],
+      "details": [
+        "100% Calf Leather",
+        "Gold-plated hardware",
+        "Interior zip pocket",
+        "Made in Italy"
+      ]
+    }
+  ],
+  "collections": [
+    {
+      "id": 1,
+      "title": "Urban Flow",
+      "description": "City life meets high fashion.",
+      "image": "https://images.unsplash.com/photo-1685432531593-1afc8a152e5f?ixlib=rb-4.1.0&q=80&w=1080"
+    },
+    {
+      "id": 2,
+      "title": "Golden Minimal",
+      "description": "Subtle luxury for the modern era.",
+      "image": "https://images.unsplash.com/photo-1755223736708-b2cf0b6d42d9?ixlib=rb-4.1.0&q=80&w=1080"
+    },
+    {
+      "id": 3,
+      "title": "Signature Pieces",
+      "description": "Timeless essentials.",
+      "image": "https://images.unsplash.com/photo-1761522002071-67755dc6c820?ixlib=rb-4.1.0&q=80&w=1080"
+    }
+  ],
+  "orders": [],
+  "users": [
+    {
+      "id": 1,
+      "name": "Admin User",
+      "email": "admin@youware.com",
+      "password": "admin",
+      "role": "admin"
+    },
+    {
+      "id": 2,
+      "name": "John Doe",
+      "email": "john@example.com",
+      "password": "password",
+      "role": "user"
+    }
+  ]
+}
