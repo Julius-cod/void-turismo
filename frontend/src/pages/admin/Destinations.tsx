@@ -9,11 +9,10 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Pencil, Trash2, Star } from 'lucide-react';
-import { destinationsApi, type Destination } from '@/lib/api';
+import { destinationsApi, BACKEND_URL, type Destination, uploadImage } from '@/lib/api';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useAuth } from '@/contexts/ApiAuthContext';
-
 
 export default function AdminDestinations() {
   const { user, isLoading, isAdmin } = useAuth();
@@ -28,6 +27,9 @@ export default function AdminDestinations() {
   const [editingItem, setEditingItem] = useState<Destination | null>(null);
   const [deletingItem, setDeletingItem] = useState<Destination | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -43,10 +45,16 @@ export default function AdminDestinations() {
     is_featured: false,
   });
 
+  interface DestinationsResponse {
+    data: Destination[];
+    meta?: { last_page: number };
+    success: boolean;
+  }
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const response = await destinationsApi.list({
+      const response: DestinationsResponse = await destinationsApi.list({
         page: currentPage,
         per_page: 10,
         search: debouncedSearch || undefined,
@@ -55,7 +63,7 @@ export default function AdminDestinations() {
         setDestinations(response.data);
         setTotalPages(response.meta?.last_page || 1);
       }
-    } catch (error) {
+    } catch {
       toast.error('Erro ao carregar destinos');
     } finally {
       setLoading(false);
@@ -68,12 +76,11 @@ export default function AdminDestinations() {
   }, [currentPage, debouncedSearch, user, isAdmin]);
 
   if (isLoading || !isAdmin)
-  return (
-    <div className="flex justify-center items-center h-[60vh] text-lg text-muted-foreground">
-      Carregando...
-    </div>
-  );
-
+    return (
+      <div className="flex justify-center items-center h-[60vh] text-lg text-muted-foreground">
+        Carregando...
+      </div>
+    );
 
   const openCreateDialog = () => {
     setEditingItem(null);
@@ -88,6 +95,8 @@ export default function AdminDestinations() {
       longitude: '',
       is_featured: false,
     });
+    setSelectedFile(null);
+    setPreviewUrl(null);
     setIsDialogOpen(true);
   };
 
@@ -104,6 +113,8 @@ export default function AdminDestinations() {
       longitude: item.longitude?.toString() || '',
       is_featured: item.is_featured,
     });
+    setSelectedFile(null);
+    setPreviewUrl(item.image_url || null);
     setIsDialogOpen(true);
   };
 
@@ -113,33 +124,43 @@ export default function AdminDestinations() {
   };
 
   const handleSave = async () => {
-    if (!formData.name || !formData.slug) {
-      toast.error('Nome e slug são obrigatórios');
-      return;
-    }
-    setIsSaving(true);
-    try {
-      const payload = {
-        ...formData,
-        latitude: formData.latitude ? parseFloat(formData.latitude) : null,
-        longitude: formData.longitude ? parseFloat(formData.longitude) : null,
-      };
+  if (!formData.name || !formData.slug) {
+    toast.error('Nome e slug são obrigatórios');
+    return;
+  }
 
-      if (editingItem) {
-        await destinationsApi.update(editingItem.id, payload);
-        toast.success('Destino atualizado com sucesso');
-      } else {
-        await destinationsApi.create(payload);
-        toast.success('Destino criado com sucesso');
-      }
-      setIsDialogOpen(false);
-      fetchData();
-    } catch (error) {
-      toast.error('Erro ao salvar destino');
-    } finally {
-      setIsSaving(false);
+  setIsSaving(true);
+
+  try {
+    const payload: Partial<Destination> & { image_file?: File } = {
+      ...formData,
+      latitude: formData.latitude && !isNaN(Number(formData.latitude)) ? Number(formData.latitude) : null,
+      longitude: formData.longitude && !isNaN(Number(formData.longitude)) ? Number(formData.longitude) : null,
+      is_featured: formData.is_featured ? 1 : 0,
+    };
+
+    // pegar input file
+    const fileInput = document.getElementById('image_file') as HTMLInputElement;
+    if (fileInput?.files?.[0]) {
+      payload.image_file = fileInput.files[0];
     }
-  };
+
+    if (editingItem) {
+      await destinationsApi.update(editingItem.id, payload);
+      toast.success('Destino atualizado com sucesso');
+    } else {
+      await destinationsApi.create(payload);
+      toast.success('Destino criado com sucesso');
+    }
+
+    setIsDialogOpen(false);
+    fetchData();
+  } catch (error) {
+    toast.error('Erro ao salvar destino');
+  } finally {
+    setIsSaving(false);
+  }
+};
 
   const handleDelete = async () => {
     if (!deletingItem) return;
@@ -149,7 +170,7 @@ export default function AdminDestinations() {
       toast.success('Destino excluído com sucesso');
       setIsDeleteDialogOpen(false);
       fetchData();
-    } catch (error) {
+    } catch {
       toast.error('Erro ao excluir destino');
     } finally {
       setIsSaving(false);
@@ -171,7 +192,11 @@ export default function AdminDestinations() {
       render: (item: Destination) => (
         <div className="w-16 h-12 rounded-lg overflow-hidden bg-muted">
           {item.image_url ? (
-            <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+            <img
+              src={item.image_url ? `${BACKEND_URL}${item.image_url}` : undefined}
+               alt={item.name}
+                className="w-full h-full object-cover"
+                />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">Sem foto</div>
           )}
@@ -183,12 +208,15 @@ export default function AdminDestinations() {
     {
       key: 'rating',
       label: 'Avaliação',
-      render: (item: Destination) => (
-        <div className="flex items-center gap-1">
-          <Star className="w-4 h-4 text-kamba-gold fill-current" />
-          <span>{item.rating?.toFixed(1) || '0.0'}</span>
-        </div>
-      ),
+      render: (item: Destination) => {
+        const ratingNumber = Number(item.rating);
+        return (
+          <div className="flex items-center gap-1">
+            <Star className="w-4 h-4 text-kamba-gold fill-current" />
+            <span>{!isNaN(ratingNumber) ? ratingNumber.toFixed(1) : '0.0'}</span>
+          </div>
+        );
+      },
     },
     {
       key: 'is_featured',
@@ -229,87 +257,115 @@ export default function AdminDestinations() {
             </div>
           )}
         />
-      </div>
 
-      {/* Dialogs de criar/editar */}
-      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingItem ? 'Editar Destino' : 'Novo Destino'}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            {/* Campos do form */}
-            <div className="grid grid-cols-2 gap-4">
+        {/* Dialogs de criar/editar */}
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingItem ? 'Editar Destino' : 'Novo Destino'}</DialogTitle>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              {/* Campos do form */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Nome *</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        name: e.target.value,
+                        slug: editingItem ? formData.slug : generateSlug(e.target.value),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="slug">Slug *</Label>
+                  <Input id="slug" value={formData.slug} onChange={(e) => setFormData({ ...formData, slug: e.target.value })} />
+                </div>
+              </div>
+
               <div className="space-y-2">
-                <Label htmlFor="name">Nome *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      name: e.target.value,
-                      slug: editingItem ? formData.slug : generateSlug(e.target.value),
-                    })
+                <Label htmlFor="region">Região</Label>
+                <Input id="region" value={formData.region} onChange={(e) => setFormData({ ...formData, region: e.target.value })} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="short_description">Descrição curta</Label>
+                <Input id="short_description" value={formData.short_description} onChange={(e) => setFormData({ ...formData, short_description: e.target.value })} />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description">Descrição completa</Label>
+                <Textarea id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={4} />
+              </div>
+
+              {/* Upload + preview */}
+             <div className="space-y-2">
+             <Label htmlFor="image_file">Imagem (arquivo)</Label>
+              {/* Input para o arquivo */}
+             <Input
+             id="image_file"
+               type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                   setSelectedFile(e.target.files[0]); // guarda o file para envio
+                    setPreviewUrl(URL.createObjectURL(e.target.files[0])); // preview
                   }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="slug">Slug *</Label>
-                <Input id="slug" value={formData.slug} onChange={(e) => setFormData({ ...formData, slug: e.target.value })} />
-              </div>
+                }}
+                disabled={isSaving} // bloquear enquanto salva
+              />
+              {/* Preview */}
+              {previewUrl && (
+                <div className="w-32 h-20 rounded-lg overflow-hidden mt-2 border">
+                  <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                </div>
+             )}
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="region">Região</Label>
-              <Input id="region" value={formData.region} onChange={(e) => setFormData({ ...formData, region: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="short_description">Descrição curta</Label>
-              <Input id="short_description" value={formData.short_description} onChange={(e) => setFormData({ ...formData, short_description: e.target.value })} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Descrição completa</Label>
-              <Textarea id="description" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} rows={4} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="image_url">URL da imagem</Label>
-              <Input id="image_url" value={formData.image_url} onChange={(e) => setFormData({ ...formData, image_url: e.target.value })} />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="latitude">Latitude</Label>
-                <Input id="latitude" type="number" step="0.0000001" value={formData.latitude} onChange={(e) => setFormData({ ...formData, latitude: e.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="longitude">Longitude</Label>
-                <Input id="longitude" type="number" step="0.0000001" value={formData.longitude} onChange={(e) => setFormData({ ...formData, longitude: e.target.value })} />
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch id="is_featured" checked={formData.is_featured} onCheckedChange={(checked) => setFormData({ ...formData, is_featured: checked })} />
-              <Label htmlFor="is_featured">Marcar como destaque</Label>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={isSaving}>{isSaving ? 'Salvando...' : 'Salvar'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Dialog de delete */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Confirmar exclusão</DialogTitle>
-          </DialogHeader>
-          <p>Tem certeza que deseja excluir o destino <strong>{deletingItem?.name}</strong>? Esta ação não pode ser desfeita.</p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={isSaving}>{isSaving ? 'Excluindo...' : 'Excluir'}</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="latitude">Latitude</Label>
+                  <Input id="latitude" type="number" step="0.0000001" value={formData.latitude} onChange={(e) => setFormData({ ...formData, latitude: e.target.value })} />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="longitude">Longitude</Label>
+                  <Input id="longitude" type="number" step="0.0000001" value={formData.longitude} onChange={(e) => setFormData({ ...formData, longitude: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Switch id="is_featured" checked={formData.is_featured} onCheckedChange={(checked) => setFormData({ ...formData, is_featured: checked })} />
+                <Label htmlFor="is_featured">Marcar como destaque</Label>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSaving || isUploading}>Cancelar</Button>
+              <Button onClick={handleSave} disabled={isSaving || isUploading}>
+                {isUploading ? 'Enviando imagem...' : isSaving ? 'Salvando...' : 'Salvar'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog de delete */}
+        <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Confirmar exclusão</DialogTitle>
+            </DialogHeader>
+            <p>Tem certeza que deseja excluir o destino <strong>{deletingItem?.name}</strong>? Esta ação não pode ser desfeita.</p>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>Cancelar</Button>
+              <Button variant="destructive" onClick={handleDelete} disabled={isSaving}>{isSaving ? 'Excluindo...' : 'Excluir'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </AdminLayout>
   );
 }

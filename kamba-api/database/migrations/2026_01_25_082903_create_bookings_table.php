@@ -28,6 +28,7 @@ return new class extends Migration
             $table->text('special_requests')->nullable();
             $table->string('stripe_payment_id')->nullable();
             $table->timestamps();
+            
         });     
     }
 

@@ -1,6 +1,7 @@
 // API Client for Laravel Backend (Sanctum SPA)
 // Base URL SEM /api
-const API_BASE_URL = 'http://localhost:8000/api';
+export const API_BASE_URL = 'http://localhost:8000/api';
+export const BACKEND_URL = 'http://localhost:8000';
 
 // =====================
 // Types
@@ -8,11 +9,12 @@ const API_BASE_URL = 'http://localhost:8000/api';
 export interface ApiResponse<T> {
   success: boolean;
   data: T;
-  message?: string;
-  errors?: Record<string, string[]>;
 }
 
-export interface PaginatedResponse<T> extends ApiResponse<T[]> {
+
+export interface PaginatedResponse<T> {
+  success: boolean;
+  data: T[];
   meta: {
     current_page: number;
     last_page: number;
@@ -20,6 +22,12 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
     total: number;
   };
 }
+
+export interface UploadResponse {
+  success: boolean;
+  url: string;
+}
+
 
 
 export interface User {
@@ -140,6 +148,13 @@ export interface DashboardStats {
 // Core API request
 // =====================
 
+export async function getCsrfCookie() {
+  await fetch(`${BACKEND_URL}/sanctum/csrf-cookie`, {
+    method: 'GET',
+    credentials: 'include', // ESSENCIAL
+  });
+}
+
 export async function apiRequest<T>(
   url: string,
   options: RequestInit = {}
@@ -154,6 +169,7 @@ export async function apiRequest<T>(
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
+    credentials: 'include',
   });
 
   const text = await response.text();
@@ -217,113 +233,417 @@ export const authApi = {
 // Destinations API
 // =====================
 export const destinationsApi = {
-  list: (params?: Record<string, any>) => {
-    const query = new URLSearchParams(params).toString();
-    return apiRequest<PaginatedResponse<Destination>>(`/destinations?${query}`);
-  },
+ list: (params?: Record<string, any>) => {
+  const cleanParams = Object.fromEntries(
+    Object.entries(params || {}).filter(
+      ([_, value]) => value !== undefined && value !== ''
+    )
+  );
+
+  const query = new URLSearchParams(cleanParams).toString();
+  return apiRequest(`/destinations${query ? `?${query}` : ''}`);
+},
+
 
   get: (slug: string) =>
     apiRequest<ApiResponse<Destination>>(`/destinations/${slug}`),
 
-  create: (data: Partial<Destination>) =>
-    apiRequest<ApiResponse<Destination>>('/admin/destinations', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+ create: async (data: Partial<Destination> & { image_file?: File }) => {
+  const formData = new FormData();
 
-  update: (id: string, data: Partial<Destination>) =>
-    apiRequest<ApiResponse<Destination>>(`/admin/destinations/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      if (key === 'image_file' && value instanceof File) {
+        formData.append('image_file', value);
+      } else {
+        formData.append(key, String(value));
+      }
+    }
+  });
+
+  const token = localStorage.getItem('token');
+
+  const res = await fetch(`${API_BASE_URL}/admin/destinations`, {
+    method: 'POST',
+    body: formData,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      // NUNCA colocar 'Content-Type', o FormData faz isso
+    },
+    credentials: 'include', // <<< ESSENCIAL pro Laravel Sanctum
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error('Erro ao criar destination', text);
+    throw new Error('Falha ao criar destino');
+  }
+
+  return res.json() as Promise<ApiResponse<Destination>>;
+},
+
+  update: async (id: string, data: Partial<Destination> & { image_file?: File }) => {
+  const formData = new FormData();
+
+  // Append _method=PUT antes de mandar pro Laravel
+  formData.append('_method', 'PUT');
+
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      if (key === 'image_file' && value instanceof File) {
+        formData.append('image_file', value); // arquivo
+      } else {
+        formData.append(key, String(value));
+      }
+    }
+  });
+
+  const token = localStorage.getItem('token');
+
+  const res = await fetch(`${API_BASE_URL}/admin/destinations/${id}`, {
+    method: 'POST', // Laravel interpreta _method=PUT
+    body: formData,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      // NÃO colocar 'Content-Type'
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error('Erro ao atualizar destination', text);
+    throw new Error('Falha ao atualizar destino');
+  }
+
+  return res.json() as Promise<ApiResponse<Destination>>;
+},
+
 
   delete: (id: string) =>
     apiRequest<ApiResponse<null>>(`/admin/destinations/${id}`, {
       method: 'DELETE',
     }),
+
+  featured: () =>
+  apiRequest<ApiResponse<Destination[]>>(
+    '/destinations?is_featured=true&per_page=8'
+  ),
 };
 
 // =====================
-// (As APIs de accommodations, experiences, bookings, users e dashboard
-// seguem exatamente o mesmo padrão — sem token, com cookies)
-// =====================
-
 // Accommodations API
+// =====================
 export const accommodationsApi = {
-  list: (params?: {
-    page?: number;
-    per_page?: number;
-    search?: string;
-    destination_id?: string;
-    listing_type?: string;
-    min_price?: number;
-    max_price?: number;
-    is_featured?: boolean;
-    is_verified?: boolean;
-  }) => {
-    const searchParams = new URLSearchParams();
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) searchParams.append(key, String(value));
-      });
-    }
-    return apiRequest<PaginatedResponse<Accommodation>>(`/accommodations?${searchParams}`);
+  list: (params?: Record<string, any>) => {
+    const cleanParams = Object.fromEntries(
+      Object.entries(params || {}).filter(
+        ([_, value]) => value !== undefined && value !== ''
+      )
+    );
+
+    const query = new URLSearchParams(cleanParams).toString();
+    return apiRequest(`/accommodations${query ? `?${query}` : ''}`);
   },
 
-  get: (slug: string) => apiRequest<ApiResponse<Accommodation>>(`/accommodations/${slug}`),
-
-  create: (data: Partial<Accommodation>) =>
-    apiRequest<ApiResponse<Accommodation>>('/admin/accommodations', {
+  get: (slug: string) =>
+    apiRequest<ApiResponse<Accommodation>>(`/accommodations/${slug}`),
+// =====================
+// Accommodations API - FUNÇÃO CREATE COMPLETA
+// =====================
+create: async (data: Partial<Accommodation> & { image_file?: File }) => {
+  console.log('🔍 === API CREATE DEBUG - INÍCIO ===');
+  console.log('📦 Dados recebidos:', data);
+  
+  const formData = new FormData();
+  const token = localStorage.getItem('token');
+  
+  console.log('🔑 Token disponível:', token ? '✅ SIM' : '❌ NÃO');
+  
+  // 1. Adicionar todos os campos ao FormData
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      console.log(`📝 Processando ${key}:`, value, 'Tipo:', typeof value);
+      
+      if (key === 'image_file' && value instanceof File) {
+        console.log(`🖼️  Adicionando arquivo: ${value.name} (${value.size} bytes)`);
+        formData.append('image_file', value);
+      } else if (Array.isArray(value)) {
+        const arrayValue = value.join(', ');
+        console.log(`📋 Array ${key} -> string: "${arrayValue}"`);
+        formData.append(key, arrayValue);
+      } else if (typeof value === 'boolean') {
+        // Laravel espera '1'/'0' ou 'true'/'false' para boolean
+        const boolValue = value ? '1' : '0';
+        console.log(`⚡ Boolean ${key} -> "${boolValue}"`);
+        formData.append(key, boolValue);
+      } else {
+        const stringValue = String(value);
+        console.log(`📄 ${key} -> string: "${stringValue}"`);
+        formData.append(key, stringValue);
+      }
+    } else {
+      console.log(`🚫 ${key}: undefined/null (ignorado)`);
+    }
+  });
+  
+  // 2. Verificar campos obrigatórios
+  console.log('🔎 === VERIFICAÇÃO DE CAMPOS ===');
+  const requiredFields = ['name', 'slug', 'listing_type', 'price_per_night'];
+  let allRequiredPresent = true;
+  
+  requiredFields.forEach(field => {
+    const value = formData.get(field);
+    if (value) {
+      console.log(`✅ ${field}: "${value}"`);
+    } else {
+      console.log(`❌ ${field}: AUSENTE!`);
+      allRequiredPresent = false;
+    }
+  });
+  
+  if (!allRequiredPresent) {
+    console.error('🚨 Campos obrigatórios faltando! Abortando...');
+    throw new Error('Campos obrigatórios não preenchidos');
+  }
+  
+  // 3. Mostrar todo o conteúdo do FormData
+  console.log('📋 === CONTEÚDO COMPLETO DO FORMDATA ===');
+  for (let pair of formData.entries()) {
+    console.log(`   ${pair[0]} = ${pair[1]}`);
+  }
+  
+  // 4. Configurar headers
+  const headers: HeadersInit = {
+    'Accept': 'application/json',
+  };
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+    console.log('🔐 Header Authorization adicionado');
+  }
+  
+  // 5. Fazer a requisição
+  console.log('🚀 === ENVIANDO REQUISIÇÃO ===');
+  console.log('🌐 URL:', `${API_BASE_URL}/admin/accommodations`);
+  console.log('📤 Método: POST');
+  console.log('📎 Headers:', headers);
+  console.log('🔗 Credentials: include');
+  
+  const startTime = Date.now();
+  
+  try {
+    const res = await fetch(`${API_BASE_URL}/admin/accommodations`, {
       method: 'POST',
-      body: JSON.stringify(data),
-    }),
+      body: formData,
+      headers: headers,
+      credentials: 'include',
+    });
+    
+    const endTime = Date.now();
+    console.log(`⏱️  Tempo de resposta: ${endTime - startTime}ms`);
+    
+    console.log('📨 === RESPOSTA RECEBIDA ===');
+    console.log('📊 Status:', res.status, res.statusText);
+    console.log('🔗 URL final:', res.url);
+    console.log('🔄 Redirecionado?', res.redirected);
+    console.log('👌 OK?', res.ok);
+    
+    // Verificar se foi redirecionado (problema de autenticação)
+    if (res.redirected) {
+      console.error('⚠️  REDIRECIONAMENTO DETECTADO! URL:', res.url);
+      console.error('⚠️  Provável problema de autenticação/token');
+    }
+    
+    const responseText = await res.text();
+    console.log('📄 Resposta (texto):', responseText);
+    
+    // Tentar parsear como JSON
+    let jsonResponse;
+    try {
+      jsonResponse = JSON.parse(responseText);
+      console.log('📦 Resposta (JSON):', jsonResponse);
+    } catch (e) {
+      console.log('❌ Resposta não é JSON válido');
+      jsonResponse = responseText;
+    }
+    
+    if (!res.ok) {
+      console.error('💥 ERRO NA RESPOSTA:', {
+        status: res.status,
+        statusText: res.statusText,
+        body: jsonResponse
+      });
+      
+      let errorMessage = 'Falha ao criar hospedagem';
+      if (jsonResponse && jsonResponse.message) {
+        errorMessage += ': ' + jsonResponse.message;
+      } else if (typeof jsonResponse === 'string') {
+        errorMessage += ': ' + jsonResponse.substring(0, 200);
+      }
+      
+      throw new Error(errorMessage);
+    }
+    
+    console.log('🎉 === SUCESSO ===');
+    console.log('✅ Accommodation criada com sucesso!');
+    
+    return jsonResponse as Promise<ApiResponse<Accommodation>>;
+    
+  } catch (error) {
+    console.error('💣 === ERRO NA REQUISIÇÃO ===');
+    console.error('Erro:', error);
+    
+    if (error instanceof Error) {
+      console.error('Mensagem:', error.message);
+      console.error('Stack:', error.stack);
+    }
+    
+    throw error;
+  } finally {
+    console.log('🔚 === FIM DO PROCESSO CREATE ===\n\n');
+  }
+},
 
-  update: (id: string, data: Partial<Accommodation>) =>
-    apiRequest<ApiResponse<Accommodation>>(`/admin/accommodations/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+ update: async (id: string, data: Partial<Accommodation> & { image_file?: File }) => {
+  const formData = new FormData();
+  
+  // Append _method=PUT para Laravel
+  formData.append('_method', 'PUT');
+
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      if (key === 'image_file' && value instanceof File) {
+        formData.append('image_file', value);
+      } else if (Array.isArray(value)) {
+        formData.append(key, value.join(', '));
+      } else if (typeof value === 'boolean') {
+        formData.append(key, value ? '1' : '0');
+      } else {
+        formData.append(key, String(value));
+      }
+    }
+  });
+
+  const token = localStorage.getItem('token');
+
+  const res = await fetch(`${API_BASE_URL}/admin/accommodations/${id}`, {
+    method: 'POST', // Laravel interpreta _method=PUT
+    body: formData,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      'Accept': 'application/json',
+    },
+    credentials: 'include',
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error('Falha ao atualizar hospedagem');
+  }
+
+  return res.json() as Promise<ApiResponse<Accommodation>>;
+},
 
   delete: (id: string) =>
     apiRequest<ApiResponse<null>>(`/admin/accommodations/${id}`, {
       method: 'DELETE',
     }),
+
+  featured: () =>
+    apiRequest<ApiResponse<Accommodation[]>>(
+      '/accommodations?is_featured=true&per_page=8'
+    ),
 };
 
-// Experiences API
 export const experiencesApi = {
-  list: (params?: {
-    page?: number;
-    per_page?: number;
-    search?: string;
-    destination_id?: string;
-    category?: string;
-    min_price?: number;
-    max_price?: number;
-    is_featured?: boolean;
-  }) => {
-    const searchParams = new URLSearchParams();
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) searchParams.append(key, String(value));
-      });
-    }
-    return apiRequest<PaginatedResponse<Experience>>(`/experiences?${searchParams}`);
+  list: (params?: Record<string, any>) => {
+    const cleanParams = Object.fromEntries(
+      Object.entries(params || {}).filter(
+        ([_, value]) => value !== undefined && value !== ''
+      )
+    );
+
+    const query = new URLSearchParams(cleanParams).toString();
+    return apiRequest(`/experiences${query ? `?${query}` : ''}`);
   },
 
-  get: (slug: string) => apiRequest<ApiResponse<Experience>>(`/experiences/${slug}`),
+  get: (slug: string) =>
+    apiRequest<ApiResponse<Experience>>(`/experiences/${slug}`),
 
-  create: (data: Partial<Experience>) =>
-    apiRequest<ApiResponse<Experience>>('/admin/experiences', {
+  create: async (data: Partial<Experience> & { image_file?: File }) => {
+    const formData = new FormData();
+
+    Object.entries(data).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (key === 'image_file' && value instanceof File) {
+          formData.append('image_file', value);
+        } else if (Array.isArray(value)) {
+          formData.append(key, value.join(', '));
+        } else if (typeof value === 'boolean') {
+          formData.append(key, value ? '1' : '0');
+        } else {
+          formData.append(key, String(value));
+        }
+      }
+    });
+
+    const token = localStorage.getItem('token');
+
+    const res = await fetch(`${API_BASE_URL}/admin/experiences`, {
       method: 'POST',
-      body: JSON.stringify(data),
-    }),
+      body: formData,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+    });
 
-  update: (id: string, data: Partial<Experience>) =>
-    apiRequest<ApiResponse<Experience>>(`/admin/experiences/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error('Falha ao criar experiência');
+    }
+
+    return res.json() as Promise<ApiResponse<Experience>>;
+  },
+
+  update: async (id: string, data: Partial<Experience> & { image_file?: File }) => {
+    const formData = new FormData();
+    formData.append('_method', 'PUT');
+
+    Object.entries(data).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (key === 'image_file' && value instanceof File) {
+          formData.append('image_file', value);
+        } else if (Array.isArray(value)) {
+          formData.append(key, value.join(', '));
+        } else if (typeof value === 'boolean') {
+          formData.append(key, value ? '1' : '0');
+        } else {
+          formData.append(key, String(value));
+        }
+      }
+    });
+
+    const token = localStorage.getItem('token');
+
+    const res = await fetch(`${API_BASE_URL}/admin/experiences/${id}`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error('Falha ao atualizar experiência');
+    }
+
+    return res.json() as Promise<ApiResponse<Experience>>;
+  },
 
   delete: (id: string) =>
     apiRequest<ApiResponse<null>>(`/admin/experiences/${id}`, {
@@ -333,80 +653,164 @@ export const experiencesApi = {
 
 // Bookings API
 export const bookingsApi = {
-  list: (params?: { status?: string }) => {
-    const searchParams = new URLSearchParams();
-    if (params?.status) searchParams.append('status', params.status);
-    return apiRequest<ApiResponse<Booking[]>>(`/bookings?${searchParams}`);
+  // Usuário: Listar minhas reservas
+  myBookings: (params?: Record<string, any>) => {
+    const cleanParams = Object.fromEntries(
+      Object.entries(params || {}).filter(
+        ([_, value]) => value !== undefined && value !== ''
+      )
+    );
+    const query = new URLSearchParams(cleanParams).toString();
+    return apiRequest<PaginatedResponse<Booking>>(`/bookings${query ? `?${query}` : ''}`);
   },
 
-  get: (id: string) => apiRequest<ApiResponse<Booking>>(`/bookings/${id}`),
+  // Usuário: Detalhes da reserva
+  getBooking: (id: string) =>
+    apiRequest<ApiResponse<Booking>>(`/bookings/${id}`),
 
-  create: (data: {
+  // Usuário: Criar reserva
+  createBooking: async (data: {
     accommodation_id?: string;
     experience_id?: string;
     check_in?: string;
     check_out?: string;
     booking_date?: string;
+    booking_time?: string;
     guests: number;
     special_requests?: string;
-  }) =>
-    apiRequest<ApiResponse<Booking>>('/bookings', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+  }) => {
+    const formData = new FormData();
+    
+    Object.entries(data).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        if (typeof value === 'boolean') {
+          formData.append(key, value ? '1' : '0');
+        } else {
+          formData.append(key, String(value));
+        }
+      }
+    });
 
-  cancel: (id: string) =>
+    const token = localStorage.getItem('token');
+    
+    const res = await fetch(`${API_BASE_URL}/bookings`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error('Falha ao criar reserva');
+    }
+
+    return res.json() as Promise<ApiResponse<Booking>>;
+  },
+
+  // Usuário: Cancelar reserva
+  cancelBooking: (id: string) =>
     apiRequest<ApiResponse<Booking>>(`/bookings/${id}/cancel`, {
       method: 'PUT',
     }),
 
-  // Admin
-  listAll: (params?: {
-    page?: number;
-    per_page?: number;
-    status?: string;
-    user_id?: string;
-    from_date?: string;
-    to_date?: string;
-  }) => {
-    const searchParams = new URLSearchParams();
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) searchParams.append(key, String(value));
-      });
+  // Usuário: Verificar disponibilidade
+  checkAvailability: async (data: {
+  accommodation_id?: string;
+  experience_id?: string;
+  check_in?: string;
+  check_out?: string;
+  booking_date?: string;
+  guests?: number;
+}) => {
+  return apiRequest<ApiResponse<{ available: boolean; message?: string }>>(
+    '/bookings/check-availability',
+    {
+      method: 'POST', // Mude para POST
+      body: JSON.stringify(data), // Envie como JSON
     }
-    return apiRequest<PaginatedResponse<Booking>>(`/admin/bookings?${searchParams}`);
+  );
+},
+
+  // Admin: Todas as reservas
+  listAll: (params?: Record<string, any>) => {
+    const cleanParams = Object.fromEntries(
+      Object.entries(params || {}).filter(
+        ([_, value]) => value !== undefined && value !== ''
+      )
+    );
+    const query = new URLSearchParams(cleanParams).toString();
+    return apiRequest<PaginatedResponse<Booking>>(`/admin/bookings${query ? `?${query}` : ''}`);
   },
 
-  updateStatus: (id: string, status: Booking['status']) =>
-    apiRequest<ApiResponse<Booking>>(`/admin/bookings/${id}/status`, {
-      method: 'PUT',
-      body: JSON.stringify({ status }),
-    }),
+  // Admin: Atualizar status
+  updateStatus: async (id: string, status: Booking['status']) => {
+    const formData = new FormData();
+    formData.append('_method', 'PUT');
+    formData.append('status', status);
+
+    const token = localStorage.getItem('token');
+    
+    const res = await fetch(`${API_BASE_URL}/admin/bookings/${id}/status`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error('Falha ao atualizar status da reserva');
+    }
+
+    return res.json() as Promise<ApiResponse<Booking>>;
+  },
 };
 
 // Users API (Admin)
 export const usersApi = {
-  list: (params?: {
-    page?: number;
-    per_page?: number;
-    search?: string;
-    role?: string;
-  }) => {
-    const searchParams = new URLSearchParams();
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) searchParams.append(key, String(value));
-      });
-    }
-    return apiRequest<PaginatedResponse<User & { bookings_count?: number }>>(`/admin/users?${searchParams}`);
+  list: (params?: Record<string, any>) => {
+    const cleanParams = Object.fromEntries(
+      Object.entries(params || {}).filter(
+        ([_, value]) => value !== undefined && value !== ''
+      )
+    );
+    const query = new URLSearchParams(cleanParams).toString();
+    return apiRequest<PaginatedResponse<User & { bookings_count?: number }>>(
+      `/admin/users${query ? `?${query}` : ''}`
+    );
   },
 
-  updateRole: (id: string, role: User['role']) =>
-    apiRequest<ApiResponse<User>>(`/admin/users/${id}/role`, {
-      method: 'PUT',
-      body: JSON.stringify({ role }),
-    }),
+  updateRole: async (id: string, role: User['role']) => {
+    const formData = new FormData();
+    formData.append('_method', 'PUT');
+    formData.append('role', role);
+
+    const token = localStorage.getItem('token');
+    
+    const res = await fetch(`${API_BASE_URL}/admin/users/${id}/role`, {
+      method: 'POST',
+      body: formData,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error('Falha ao atualizar role do usuário');
+    }
+
+    return res.json() as Promise<ApiResponse<User>>;
+  },
 
   delete: (id: string) =>
     apiRequest<ApiResponse<null>>(`/admin/users/${id}`, {
@@ -414,7 +818,39 @@ export const usersApi = {
     }),
 };
 
+
 // Dashboard API (Admin)
 export const dashboardApi = {
   stats: () => apiRequest<ApiResponse<DashboardStats>>('/admin/stats'),
 };
+
+
+ //=====================
+// Upload de imagem
+// =====================
+export async function uploadImage(file: File): Promise<UploadResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const token = localStorage.getItem('token');
+
+  const res = await fetch(`${API_BASE_URL}/admin/upload`, {
+    method: 'POST',
+    body: formData,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      // 'Content-Type' NÃO colocar! O browser define multipart/form-data sozinho
+    },
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.error('Erro no upload', text);
+    throw new Error('Falha no upload de imagem');
+  }
+
+  const data: UploadResponse = await res.json();
+  console.log('Resposta upload:', data);
+
+  return data;
+}

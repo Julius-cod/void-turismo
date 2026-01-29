@@ -10,9 +10,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pencil, Trash2, Star, Clock } from 'lucide-react';
-import { experiencesApi, destinationsApi, type Experience, type Destination } from '@/lib/api';
+import { experiencesApi, BACKEND_URL, destinationsApi, type Experience, type Destination } from '@/lib/api';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useAuth } from '@/contexts/ApiAuthContext';
 
 const categories = [
   { value: 'city_tour', label: 'City Tour' },
@@ -24,9 +25,11 @@ const categories = [
 ];
 
 export default function AdminExperiences() {
-  const [items, setItems] = useState<Experience[]>([]);
+  const { user, isLoading: authLoading, isAdmin } = useAuth();
+
+  const [experiences, setExperiences] = useState<Experience[]>([]);
   const [destinations, setDestinations] = useState<Destination[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -35,6 +38,8 @@ export default function AdminExperiences() {
   const [editingItem, setEditingItem] = useState<Experience | null>(null);
   const [deletingItem, setDeletingItem] = useState<Experience | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const debouncedSearch = useDebounce(search, 300);
 
@@ -57,35 +62,54 @@ export default function AdminExperiences() {
     is_featured: false,
   });
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  interface ExperiencesResponse {
+    data: Experience[];
+    meta?: { last_page: number };
+    success: boolean;
+  }
+
+  const fetchExperiences = async () => {
+    setLoading(true);
     try {
-      const [expResponse, destResponse] = await Promise.all([
-        experiencesApi.list({
-          page: currentPage,
-          per_page: 10,
-          search: debouncedSearch || undefined,
-        }),
-        destinationsApi.list({ per_page: 100 }),
-      ]);
-      
-      if (expResponse.success) {
-        setItems(expResponse.data);
-        setTotalPages(expResponse.meta?.last_page || 1);
+      const response: ExperiencesResponse = await experiencesApi.list({
+        page: currentPage,
+        per_page: 10,
+        search: debouncedSearch || undefined,
+      });
+      if (response.success) {
+        setExperiences(response.data);
+        setTotalPages(response.meta?.last_page || 1);
       }
-      if (destResponse.success) {
-        setDestinations(destResponse.data);
-      }
-    } catch (error) {
+    } catch {
       toast.error('Erro ao carregar experiências');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
+    }
+  };
+
+  const fetchDestinations = async () => {
+    try {
+      const response = await destinationsApi.list({ per_page: 100 });
+      if (response.success) {
+        setDestinations(response.data);
+      }
+    } catch {
+      console.error('Erro ao carregar destinos');
     }
   };
 
   useEffect(() => {
-    fetchData();
-  }, [currentPage, debouncedSearch]);
+    if (!user || !isAdmin) return;
+    fetchExperiences();
+    fetchDestinations();
+  }, [currentPage, debouncedSearch, user, isAdmin]);
+
+  if (authLoading || !isAdmin)
+    return (
+      <div className="flex justify-center items-center h-[60vh] text-lg text-muted-foreground">
+        Carregando...
+      </div>
+    );
 
   const openCreateDialog = () => {
     setEditingItem(null);
@@ -107,6 +131,8 @@ export default function AdminExperiences() {
       longitude: '',
       is_featured: false,
     });
+    setSelectedFile(null);
+    setPreviewUrl(null);
     setIsDialogOpen(true);
   };
 
@@ -115,7 +141,7 @@ export default function AdminExperiences() {
     setFormData({
       name: item.name,
       slug: item.slug,
-      destination_id: item.destination_id || '',
+      destination_id: item.destination_id?.toString() || '',
       category: item.category,
       short_description: item.short_description || '',
       description: item.description || '',
@@ -130,6 +156,8 @@ export default function AdminExperiences() {
       longitude: item.longitude?.toString() || '',
       is_featured: item.is_featured,
     });
+    setSelectedFile(null);
+    setPreviewUrl(item.image_url ? `${BACKEND_URL}${item.image_url}` : null);
     setIsDialogOpen(true);
   };
 
@@ -138,14 +166,13 @@ export default function AdminExperiences() {
     setIsDeleteDialogOpen(true);
   };
 
-  const generateSlug = (name: string) => {
-    return name
+  const generateSlug = (name: string) =>
+    name
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
-  };
 
   const handleSave = async () => {
     if (!formData.name || !formData.slug || !formData.price) {
@@ -154,25 +181,31 @@ export default function AdminExperiences() {
     }
 
     setIsSaving(true);
+
     try {
-      const payload = {
+      const payload: any = {
         name: formData.name,
         slug: formData.slug,
-        destination_id: formData.destination_id || null,
+        destination_id: formData.destination_id || '',
         category: formData.category,
-        short_description: formData.short_description || null,
-        description: formData.description || null,
-        image_url: formData.image_url || null,
-        includes: formData.includes ? formData.includes.split(',').map(a => a.trim()) : null,
-        duration_hours: formData.duration_hours ? parseFloat(formData.duration_hours) : null,
-        max_participants: formData.max_participants ? parseInt(formData.max_participants) : null,
-        meeting_point: formData.meeting_point || null,
-        price: parseFloat(formData.price),
-        currency: formData.currency,
-        latitude: formData.latitude ? parseFloat(formData.latitude) : null,
-        longitude: formData.longitude ? parseFloat(formData.longitude) : null,
+        short_description: formData.short_description || '',
+        description: formData.description || '',
+        image_url: formData.image_url || '',
+        includes: formData.includes ? formData.includes.split(',').map(a => a.trim()) : [],
+        duration_hours: formData.duration_hours || '',
+        max_participants: formData.max_participants || '',
+        meeting_point: formData.meeting_point || '',
+        price: formData.price,
+        currency: formData.currency || 'USD',
+        latitude: formData.latitude || '',
+        longitude: formData.longitude || '',
         is_featured: formData.is_featured,
       };
+
+      const fileInput = document.getElementById('image_file') as HTMLInputElement;
+      if (fileInput?.files?.[0]) {
+        payload.image_file = fileInput.files[0];
+      }
 
       if (editingItem) {
         await experiencesApi.update(editingItem.id, payload);
@@ -181,8 +214,9 @@ export default function AdminExperiences() {
         await experiencesApi.create(payload);
         toast.success('Experiência criada com sucesso');
       }
+
       setIsDialogOpen(false);
-      fetchData();
+      fetchExperiences();
     } catch (error) {
       toast.error('Erro ao salvar experiência');
     } finally {
@@ -192,14 +226,13 @@ export default function AdminExperiences() {
 
   const handleDelete = async () => {
     if (!deletingItem) return;
-    
     setIsSaving(true);
     try {
       await experiencesApi.delete(deletingItem.id);
       toast.success('Experiência excluída com sucesso');
       setIsDeleteDialogOpen(false);
-      fetchData();
-    } catch (error) {
+      fetchExperiences();
+    } catch {
       toast.error('Erro ao excluir experiência');
     } finally {
       setIsSaving(false);
@@ -213,7 +246,11 @@ export default function AdminExperiences() {
       render: (item: Experience) => (
         <div className="w-16 h-12 rounded-lg overflow-hidden bg-muted">
           {item.image_url ? (
-            <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+            <img
+              src={item.image_url ? `${BACKEND_URL}${item.image_url}` : undefined}
+              alt={item.name}
+              className="w-full h-full object-cover"
+            />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
               Sem foto
@@ -250,12 +287,15 @@ export default function AdminExperiences() {
     {
       key: 'rating',
       label: 'Avaliação',
-      render: (item: Experience) => (
-        <div className="flex items-center gap-1">
-          <Star className="w-4 h-4 text-kamba-gold fill-current" />
-          <span>{item.rating?.toFixed(1) || '0.0'}</span>
-        </div>
-      ),
+      render: (item: Experience) => {
+        const ratingNumber = Number(item.rating);
+        return (
+          <div className="flex items-center gap-1">
+            <Star className="w-4 h-4 text-kamba-gold fill-current" />
+            <span>{!isNaN(ratingNumber) ? ratingNumber.toFixed(1) : '0.0'}</span>
+          </div>
+        );
+      },
     },
     {
       key: 'is_featured',
@@ -277,8 +317,8 @@ export default function AdminExperiences() {
 
         <DataTable
           columns={columns}
-          data={items}
-          isLoading={isLoading}
+          data={experiences}
+          isLoading={loading}
           searchValue={search}
           onSearchChange={setSearch}
           searchPlaceholder="Buscar experiências..."
@@ -344,7 +384,7 @@ export default function AdminExperiences() {
                   </SelectTrigger>
                   <SelectContent>
                     {destinations.map((dest) => (
-                      <SelectItem key={dest.id} value={dest.id}>
+                      <SelectItem key={dest.id} value={dest.id.toString()}>
                         {dest.name}
                       </SelectItem>
                     ))}
@@ -360,7 +400,7 @@ export default function AdminExperiences() {
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Selecione a categoria" />
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map((cat) => (
@@ -393,12 +433,24 @@ export default function AdminExperiences() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="image_url">URL da imagem</Label>
+              <Label htmlFor="image_file">Imagem (arquivo)</Label>
               <Input
-                id="image_url"
-                value={formData.image_url}
-                onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                id="image_file"
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setSelectedFile(e.target.files[0]);
+                    setPreviewUrl(URL.createObjectURL(e.target.files[0]));
+                  }
+                }}
+                disabled={isSaving}
               />
+              {previewUrl && (
+                <div className="w-32 h-20 rounded-lg overflow-hidden mt-2 border">
+                  <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -457,7 +509,7 @@ export default function AdminExperiences() {
                   onValueChange={(value) => setFormData({ ...formData, currency: value })}
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="USD">USD</SelectItem>
@@ -501,7 +553,7 @@ export default function AdminExperiences() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)} disabled={isSaving}>
               Cancelar
             </Button>
             <Button onClick={handleSave} disabled={isSaving}>

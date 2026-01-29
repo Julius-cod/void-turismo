@@ -1,86 +1,22 @@
-import { useRef } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Star, MapPin, ChevronLeft, ChevronRight, Heart, BadgeCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/contexts/LanguageContext';
-
-// Mock data - will be replaced with real data from database
-const stays = [
-  {
-    id: '1',
-    name: 'Hotel Presidente Luanda',
-    slug: 'hotel-presidente-luanda',
-    shortDescription: 'Luxury beachfront hotel with panoramic ocean views',
-    imageUrl: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80',
-    location: 'Luanda',
-    pricePerNight: 250,
-    currency: 'USD',
-    rating: 4.8,
-    reviewCount: 524,
-    listingType: 'hotel',
-    isVerified: true,
-  },
-  {
-    id: '2',
-    name: 'Eco Lodge Kissama',
-    slug: 'eco-lodge-kissama',
-    shortDescription: 'Sustainable lodge in the heart of Kissama National Park',
-    imageUrl: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?auto=format&fit=crop&w=800&q=80',
-    location: 'Kissama',
-    pricePerNight: 180,
-    currency: 'USD',
-    rating: 4.9,
-    reviewCount: 312,
-    listingType: 'lodge',
-    isVerified: true,
-  },
-  {
-    id: '3',
-    name: 'Casa Colonial Benguela',
-    slug: 'casa-colonial-benguela',
-    shortDescription: 'Charming colonial-era guesthouse with modern comforts',
-    imageUrl: 'https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=800&q=80',
-    location: 'Benguela',
-    pricePerNight: 95,
-    currency: 'USD',
-    rating: 4.6,
-    reviewCount: 189,
-    listingType: 'guesthouse',
-    isVerified: true,
-  },
-  {
-    id: '4',
-    name: 'Serra da Leba Resort',
-    slug: 'serra-da-leba-resort',
-    shortDescription: 'Mountain retreat with breathtaking views of the escarpment',
-    imageUrl: 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?auto=format&fit=crop&w=800&q=80',
-    location: 'Lubango',
-    pricePerNight: 220,
-    currency: 'USD',
-    rating: 4.7,
-    reviewCount: 276,
-    listingType: 'hotel',
-    isVerified: true,
-  },
-  {
-    id: '5',
-    name: 'Praia Morena Beach House',
-    slug: 'praia-morena-beach-house',
-    shortDescription: 'Private beachfront villa with stunning sunset views',
-    imageUrl: 'https://images.unsplash.com/photo-1499793983690-e29da59ef1c2?auto=format&fit=crop&w=800&q=80',
-    location: 'Namibe',
-    pricePerNight: 320,
-    currency: 'USD',
-    rating: 4.9,
-    reviewCount: 156,
-    listingType: 'apartment',
-    isVerified: false,
-  },
-];
+import { accommodationsApi, BACKEND_URL, type Accommodation } from '@/lib/api';
+import { toast } from 'sonner';
 
 export function RecommendedStays() {
   const { t } = useLanguage();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  
+  const [stays, setStays] = useState<Accommodation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    const saved = localStorage.getItem('favorite_stays');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
@@ -92,10 +28,152 @@ export function RecommendedStays() {
     }
   };
 
+  const toggleFavorite = (stayId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const newFavorites = favorites.includes(stayId)
+      ? favorites.filter(id => id !== stayId)
+      : [...favorites, stayId];
+    
+    setFavorites(newFavorites);
+    localStorage.setItem('favorite_stays', JSON.stringify(newFavorites));
+    
+    const stay = stays.find(s => s.id === stayId);
+    if (stay) {
+      toast.success(
+        favorites.includes(stayId)
+          ? `Removido ${stay.name} dos favoritos`
+          : `Adicionado ${stay.name} aos favoritos`
+      );
+    }
+  };
+
+  // Helper para formatar rating
+  const formatRating = (rating: any): string => {
+    if (rating === null || rating === undefined) return '0.0';
+    const num = Number(rating);
+    return !isNaN(num) ? num.toFixed(1) : '0.0';
+  };
+
+  // Helper para obter URL da imagem
+  const getImageUrl = (imageUrl: string | null | undefined): string => {
+    if (!imageUrl) return 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80';
+    if (imageUrl.startsWith('http')) return imageUrl;
+    return `${BACKEND_URL}${imageUrl}`;
+  };
+
+  const fetchRecommendedStays = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      console.log('Fetching recommended stays...');
+      const response = await accommodationsApi.list({
+        per_page: 10,
+        is_featured: true,
+      });
+      
+      console.log('Recommended stays response:', response);
+      
+      if (response.success) {
+        setStays(response.data);
+      } else {
+        setError('Erro ao carregar acomodações');
+      }
+    } catch (error) {
+      console.error('Erro ao buscar stays:', error);
+      setError('Erro ao carregar acomodações. Tente novamente.');
+      toast.error('Erro ao carregar acomodações');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecommendedStays();
+  }, []);
+
+  const listingTypeLabels: Record<string, string> = {
+    hotel: 'Hotel',
+    lodge: 'Lodge',
+    guesthouse: 'Pousada',
+    hostel: 'Hostel',
+    apartment: 'Apartamento',
+  };
+
+  if (loading) {
+    return (
+      <section className="section-padding bg-secondary/30">
+        <div className="container-wide">
+          <div className="flex items-end justify-between mb-12">
+            <div>
+              <h2 className="font-serif text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4">
+                {t('section.stays')}
+              </h2>
+              <p className="text-muted-foreground text-lg max-w-xl">
+                {t('section.staysSubtitle')}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-6 overflow-x-auto pb-4 -mx-4 px-4">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex-shrink-0 w-[340px]">
+                <div className="bg-card rounded-2xl overflow-hidden shadow-card animate-pulse">
+                  <div className="aspect-[4/3] bg-gray-300" />
+                  <div className="p-5 space-y-3">
+                    <div className="h-6 bg-gray-300 rounded" />
+                    <div className="h-4 bg-gray-300 rounded" />
+                    <div className="h-4 bg-gray-300 rounded w-2/3" />
+                    <div className="h-8 bg-gray-300 rounded" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section className="section-padding bg-secondary/30">
+        <div className="container-wide">
+          <div className="text-center py-12">
+            <h2 className="font-serif text-3xl font-bold text-foreground mb-4">
+              {t('section.stays')}
+            </h2>
+            <p className="text-muted-foreground mb-6">{error}</p>
+            <Button onClick={fetchRecommendedStays} variant="outline">
+              Tentar novamente
+            </Button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (stays.length === 0) {
+    return (
+      <section className="section-padding bg-secondary/30">
+        <div className="container-wide">
+          <div className="text-center py-12">
+            <h2 className="font-serif text-3xl font-bold text-foreground mb-4">
+              {t('section.stays')}
+            </h2>
+            <p className="text-muted-foreground">
+              Nenhuma acomodação disponível no momento
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="section-padding bg-secondary/30">
       <div className="container-wide">
-        {/* Section Header */}
         <div className="flex items-end justify-between mb-12">
           <div>
             <h2 className="font-serif text-3xl md:text-4xl lg:text-5xl font-bold text-foreground mb-4">
@@ -125,7 +203,6 @@ export function RecommendedStays() {
           </div>
         </div>
 
-        {/* Horizontal Scroll Container */}
         <div
           ref={scrollContainerRef}
           className="flex gap-6 overflow-x-auto no-scrollbar pb-4 -mx-4 px-4"
@@ -133,41 +210,45 @@ export function RecommendedStays() {
           {stays.map((stay) => (
             <Link
               key={stay.id}
-              to={`/stays/${stay.slug}`}
+              to={`/accommodations/${stay.slug}`}
               className="flex-shrink-0 w-[340px] group card-hover"
             >
               <div className="bg-card rounded-2xl overflow-hidden shadow-card">
-                {/* Image */}
                 <div className="relative aspect-[4/3] overflow-hidden">
                   <img
-                    src={stay.imageUrl}
+                    src={getImageUrl(stay.image_url)}
                     alt={stay.name}
                     className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80';
+                    }}
                   />
-                  {/* Favorite Button */}
+                  
                   <button
                     className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 flex items-center justify-center hover:bg-white transition-colors"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      // Toggle favorite logic
-                    }}
+                    onClick={(e) => toggleFavorite(stay.id, e)}
                   >
-                    <Heart className="w-5 h-5 text-foreground" />
+                    <Heart 
+                      className={`w-5 h-5 transition-colors ${
+                        favorites.includes(stay.id) 
+                          ? 'text-red-500 fill-red-500' 
+                          : 'text-foreground'
+                      }`}
+                    />
                   </button>
-                  {/* Verified Badge */}
-                  {stay.isVerified && (
+                  
+                  {stay.is_verified && (
                     <div className="absolute top-4 left-4 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/90 text-xs font-medium">
                       <BadgeCheck className="w-4 h-4 text-primary" />
-                      Verified
+                      Verificado
                     </div>
                   )}
-                  {/* Type Badge */}
+                  
                   <div className="absolute bottom-4 left-4 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-sm text-white text-xs font-medium capitalize">
-                    {stay.listingType}
+                    {listingTypeLabels[stay.listing_type] || stay.listing_type}
                   </div>
                 </div>
 
-                {/* Content */}
                 <div className="p-5">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <h3 className="font-semibold text-foreground text-lg line-clamp-1 group-hover:text-primary transition-colors">
@@ -175,27 +256,34 @@ export function RecommendedStays() {
                     </h3>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       <Star className="w-4 h-4 text-kamba-gold fill-kamba-gold" />
-                      <span className="font-semibold text-sm">{stay.rating}</span>
+                      <span className="font-semibold text-sm">
+                        {formatRating(stay.rating)}
+                      </span>
                     </div>
                   </div>
+                  
                   <div className="flex items-center gap-1.5 text-muted-foreground text-sm mb-3">
                     <MapPin className="w-4 h-4" />
-                    {stay.location}
+                    <span>
+                      {stay.destination?.name || stay.region || 'Localização não disponível'}
+                    </span>
                   </div>
+                  
                   <p className="text-muted-foreground text-sm line-clamp-2 mb-4">
-                    {stay.shortDescription}
+                    {stay.short_description || 'Descrição não disponível'}
                   </p>
+                  
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xl font-bold text-foreground">
-                        ${stay.pricePerNight}
+                        {stay.currency || 'USD'} {stay.price_per_night || '0'}
                       </span>
                       <span className="text-muted-foreground text-sm ml-1">
                         / {t('card.perNight')}
                       </span>
                     </div>
                     <span className="text-muted-foreground text-sm">
-                      {stay.reviewCount} {t('card.reviews')}
+                      {stay.review_count || 0} {t('card.reviews')}
                     </span>
                   </div>
                 </div>
@@ -204,7 +292,6 @@ export function RecommendedStays() {
           ))}
         </div>
 
-        {/* View All Button */}
         <div className="text-center mt-8">
           <Button
             variant="outline"
@@ -212,7 +299,7 @@ export function RecommendedStays() {
             className="rounded-xl border-2"
             asChild
           >
-            <Link to="/stays">{t('common.viewAll')}</Link>
+            <Link to="/accommodations">{t('common.viewAll')}</Link>
           </Button>
         </div>
       </div>

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Testes API Accommodations</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        button { margin: 5px; padding: 10px; background: #007bff; color: white; border: none; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .result { margin-top: 10px; padding: 10px; background: #f8f9fa; border: 1px solid #ddd; }
+        .success { color: green; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h1>Testes API Accommodations</h1>
+    
+    <div>
+        <h3>1. Autenticação</h3>
+        <button onclick="checkToken()">Verificar Token</button>
+        <button onclick="getCsrfCookie()">Obter CSRF Cookie</button>
+        <div id="tokenResult" class="result"></div>
+    </div>
+    
+    <div>
+        <h3>2. Testar Rotas</h3>
+        <button onclick="testPublicGet()">GET Público (/accommodations)</button>
+        <button onclick="testAdminGet()">GET Admin (/admin/accommodations)</button>
+        <button onclick="testAdminPost()">POST Admin (Criar)</button>
+        <div id="testResult" class="result"></div>
+    </div>
+    
+    <div>
+        <h3>3. Teste Completo de Criação</h3>
+        <button onclick="testFullCreate()">Criar Accommodation Completa</button>
+        <div id="fullTestResult" class="result"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api';
+        const token = localStorage.getItem('token');
+        
+        function logResult(elementId, message, isError = false) {
+            const elem = document.getElementById(elementId);
+            elem.innerHTML = `<pre class="${isError ? 'error' : 'success'}">${message}</pre>`;
+            console.log(message);
+        }
+        
+        function checkToken() {
+            const token = localStorage.getItem('token');
+            logResult('tokenResult', 
+                token ? `✅ Token encontrado:\n${token.substring(0, 50)}...` 
+                      : '❌ Nenhum token encontrado');
+        }
+        
+        async function getCsrfCookie() {
+            try {
+                const res = await fetch(`${API_BASE}/sanctum/csrf-cookie`, {
+                    credentials: 'include'
+                });
+                logResult('tokenResult', 
+                    `✅ CSRF Cookie obtido - Status: ${res.status}`);
+            } catch (error) {
+                logResult('tokenResult', `❌ Erro: ${error}`, true);
+            }
+        }
+        
+        async function testPublicGet() {
+            try {
+                const res = await fetch(`${API_BASE}/accommodations`);
+                const data = await res.json();
+                logResult('testResult', 
+                    `✅ GET Público - Status: ${res.status}\n` +
+                    `Total de accommodations: ${data.data?.length || 0}\n` +
+                    `Success: ${data.success}`);
+            } catch (error) {
+                logResult('testResult', `❌ Erro: ${error}`, true);
+            }
+        }
+        
+        async function testAdminGet() {
+            try {
+                const res = await fetch(`${API_BASE}/admin/accommodations`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json'
+                    },
+                    credentials: 'include'
+                });
+                const text = await res.text();
+                logResult('testResult', 
+                    `GET Admin - Status: ${res.status}\n` +
+                    `URL: ${res.url}\n` +
+                    `Resposta: ${text.substring(0, 500)}...`);
+            } catch (error) {
+                logResult('testResult', `❌ Erro: ${error}`, true);
+            }
+        }
+        
+        async function testAdminPost() {
+            const testData = {
+                name: 'Hotel Teste ' + Date.now(),
+                slug: 'hotel-teste-' + Date.now(),
+                listing_type: 'hotel',
+                price_per_night: '120.50',
+                currency: 'USD',
+                short_description: 'Hotel de teste',
+                is_featured: 1,
+                is_verified: 1
+            };
+            
+            try {
+                const res = await fetch(`${API_BASE}/admin/accommodations`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify(testData)
+                });
+                
+                const text = await res.text();
+                let jsonResponse;
+                try {
+                    jsonResponse = JSON.parse(text);
+                } catch(e) {
+                    jsonResponse = text;
+                }
+                
+                logResult('testResult', 
+                    `POST Admin - Status: ${res.status}\n` +
+                    `Enviado: ${JSON.stringify(testData, null, 2)}\n` +
+                    `Resposta: ${JSON.stringify(jsonResponse, null, 2)}`);
+            } catch (error) {
+                logResult('testResult', `❌ Erro: ${error}`, true);
+            }
+        }
+        
+        async function testFullCreate() {
+            // Primeiro obtém CSRF cookie
+            await fetch(`${API_BASE}/sanctum/csrf-cookie`, {
+                credentials: 'include'
+            });
+            
+            // Cria FormData como o frontend faz
+            const formData = new FormData();
+            formData.append('name', 'Hotel FormData Test');
+            formData.append('slug', 'hotel-formdata-test');
+            formData.append('listing_type', 'hotel');
+            formData.append('price_per_night', '200.00');
+            formData.append('currency', 'USD');
+            formData.append('is_featured', '1');
+            formData.append('is_verified', '0');
+            
+            try {
+                const res = await fetch(`${API_BASE}/admin/accommodations`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                        // NÃO incluir Content-Type para FormData
+                    },
+                    credentials: 'include',
+                    body: formData
+                });
+                
+                const text = await res.text();
+                logResult('fullTestResult', 
+                    `✅ FormData POST - Status: ${res.status}\n` +
+                    `Resposta: ${text}`);
+            } catch (error) {
+                logResult('fullTestResult', `❌ Erro: ${error}`, true);
+            }
+        }
+        
+        // Inicialização
+        checkToken();
+    </script>
+</body>
+</html>

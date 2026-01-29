@@ -9,6 +9,7 @@ import { Eye } from 'lucide-react';
 import { bookingsApi, type Booking } from '@/lib/api';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useAuth } from '@/contexts/ApiAuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -27,8 +28,10 @@ const statusLabels: Record<string, string> = {
 };
 
 export default function AdminBookings() {
-  const [items, setItems] = useState<Booking[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user, isLoading: authLoading, isAdmin } = useAuth();
+
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -39,29 +42,44 @@ export default function AdminBookings() {
 
   const debouncedSearch = useDebounce(search, 300);
 
-  const fetchData = async () => {
-    setIsLoading(true);
-    try {
-      const response = await bookingsApi.listAll({
-        page: currentPage,
-        per_page: 10,
-        status: statusFilter || undefined,
-      });
-      
-      if (response.success) {
-        setItems(response.data);
-        setTotalPages(response.meta?.last_page || 1);
-      }
-    } catch (error) {
-      toast.error('Erro ao carregar reservas');
-    } finally {
-      setIsLoading(false);
+  interface BookingsResponse {
+    data: Booking[];
+    meta?: { last_page: number };
+    success: boolean;
+  }
+
+  const fetchBookings = async () => {
+  setLoading(true);
+  try {
+    const response: BookingsResponse = await bookingsApi.listAll({
+      page: currentPage,
+      per_page: 10,
+      status: statusFilter === 'all' ? undefined : statusFilter || undefined,
+      search: debouncedSearch || undefined,
+    });
+    
+    if (response.success) {
+      setBookings(response.data);
+      setTotalPages(response.meta?.last_page || 1);
     }
-  };
+  } catch (error) {
+    toast.error('Erro ao carregar reservas');
+  } finally {
+    setLoading(false);
+  }
+};
 
   useEffect(() => {
-    fetchData();
-  }, [currentPage, debouncedSearch, statusFilter]);
+    if (!user || !isAdmin) return;
+    fetchBookings();
+  }, [currentPage, debouncedSearch, statusFilter, user, isAdmin]);
+
+  if (authLoading || !isAdmin)
+    return (
+      <div className="flex justify-center items-center h-[60vh] text-lg text-muted-foreground">
+        Carregando...
+      </div>
+    );
 
   const openDetailDialog = (item: Booking) => {
     setSelectedItem(item);
@@ -73,7 +91,7 @@ export default function AdminBookings() {
     try {
       await bookingsApi.updateStatus(id, status);
       toast.success('Status atualizado com sucesso');
-      fetchData();
+      fetchBookings();
       if (selectedItem?.id === id) {
         setSelectedItem({ ...selectedItem, status });
       }
@@ -86,7 +104,11 @@ export default function AdminBookings() {
 
   const formatDate = (dateStr: string | null) => {
     if (!dateStr) return '-';
-    return format(new Date(dateStr), 'dd/MM/yyyy', { locale: ptBR });
+    try {
+      return format(new Date(dateStr), 'dd/MM/yyyy', { locale: ptBR });
+    } catch {
+      return '-';
+    }
   };
 
   const columns = [
@@ -131,7 +153,7 @@ export default function AdminBookings() {
     {
       key: 'guests',
       label: 'Hóspedes',
-      render: (item: Booking) => item.guests,
+      render: (item: Booking) => item.guests || '-',
     },
     {
       key: 'total',
@@ -166,7 +188,7 @@ export default function AdminBookings() {
               <SelectValue placeholder="Filtrar por status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todos os status</SelectItem>
+              <SelectItem value="all">Todos os status</SelectItem>
               <SelectItem value="pending">Pendente</SelectItem>
               <SelectItem value="confirmed">Confirmada</SelectItem>
               <SelectItem value="cancelled">Cancelada</SelectItem>
@@ -177,11 +199,11 @@ export default function AdminBookings() {
 
         <DataTable
           columns={columns}
-          data={items}
-          isLoading={isLoading}
+          data={bookings}
+          isLoading={loading}
           searchValue={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Buscar reservas..."
+          searchPlaceholder="Buscar por ID, nome ou email..."
           currentPage={currentPage}
           totalPages={totalPages}
           onPageChange={setCurrentPage}
@@ -204,7 +226,7 @@ export default function AdminBookings() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 <div>
                   <p className="text-muted-foreground">ID</p>
-                  <p className="font-mono">{selectedItem.id}</p>
+                  <p className="font-mono text-xs">{selectedItem.id}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Status</p>
@@ -218,7 +240,7 @@ export default function AdminBookings() {
                 </div>
                 <div>
                   <p className="text-muted-foreground">Item</p>
-                  <p>{selectedItem.accommodation?.name || selectedItem.experience?.name}</p>
+                  <p>{selectedItem.accommodation?.name || selectedItem.experience?.name || '-'}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Check-in</p>
@@ -229,39 +251,52 @@ export default function AdminBookings() {
                   <p>{formatDate(selectedItem.check_out)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Hóspedes</p>
-                  <p>{selectedItem.guests}</p>
+                  <p className="text-muted-foreground">Data da Reserva</p>
+                  <p>{formatDate(selectedItem.booking_date)}</p>
                 </div>
                 <div>
+                  <p className="text-muted-foreground">Hóspedes</p>
+                  <p>{selectedItem.guests || '-'}</p>
+                </div>
+                <div className="col-span-2">
                   <p className="text-muted-foreground">Total</p>
-                  <p className="font-bold">{selectedItem.currency} {selectedItem.total_price}</p>
+                  <p className="font-bold text-lg">{selectedItem.currency} {selectedItem.total_price}</p>
                 </div>
               </div>
 
               {selectedItem.special_requests && (
                 <div>
                   <p className="text-muted-foreground text-sm">Pedidos especiais</p>
-                  <p className="text-sm bg-muted p-2 rounded">{selectedItem.special_requests}</p>
+                  <p className="text-sm bg-muted p-2 rounded whitespace-pre-wrap">
+                    {selectedItem.special_requests}
+                  </p>
+                </div>
+              )}
+
+              {selectedItem.user && (
+                <div>
+                  <p className="text-muted-foreground text-sm">Usuário</p>
+                  <p className="text-sm">{selectedItem.user.name} ({selectedItem.user.email})</p>
                 </div>
               )}
 
               <div className="space-y-2">
                 <p className="text-muted-foreground text-sm">Alterar status</p>
                 <Select
-                  value={selectedItem.status}
-                  onValueChange={(value: Booking['status']) => handleStatusChange(selectedItem.id, value)}
-                  disabled={isSaving}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Pendente</SelectItem>
-                    <SelectItem value="confirmed">Confirmada</SelectItem>
-                    <SelectItem value="cancelled">Cancelada</SelectItem>
-                    <SelectItem value="completed">Concluída</SelectItem>
-                  </SelectContent>
-                </Select>
+  value={selectedItem.status}
+  onValueChange={(value: Booking['status']) => handleStatusChange(selectedItem.id, value)}
+  disabled={isSaving}
+>
+  <SelectTrigger>
+    <SelectValue />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="pending">Pendente</SelectItem>
+    <SelectItem value="confirmed">Confirmada</SelectItem>
+    <SelectItem value="cancelled">Cancelada</SelectItem>
+    <SelectItem value="completed">Concluída</SelectItem>
+  </SelectContent>
+</Select>
               </div>
             </div>
           )}

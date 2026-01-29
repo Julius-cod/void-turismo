@@ -10,6 +10,7 @@ import { Trash2, Shield } from 'lucide-react';
 import { usersApi, type User } from '@/lib/api';
 import { toast } from 'sonner';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useAuth } from '@/contexts/ApiAuthContext';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -28,42 +29,63 @@ const roleLabels: Record<string, string> = {
 type UserWithBookings = User & { bookings_count?: number };
 
 export default function AdminUsers() {
-  const [items, setItems] = useState<UserWithBookings[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user: currentUser, isLoading: authLoading, isAdmin } = useAuth();
+
+  const [users, setUsers] = useState<UserWithBookings[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deletingItem, setDeletingItem] = useState<UserWithBookings | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [roleFilter, setRoleFilter] = useState<string>('');
+  const [roleFilter, setRoleFilter] = useState<string>('all');
 
   const debouncedSearch = useDebounce(search, 300);
 
-  const fetchData = async () => {
-    setIsLoading(true);
+  interface UsersResponse {
+    data: UserWithBookings[];
+    meta?: { last_page: number };
+    success: boolean;
+  }
+
+  const fetchUsers = async () => {
+    setLoading(true);
     try {
-      const response = await usersApi.list({
+      const params: Record<string, any> = {
         page: currentPage,
         per_page: 10,
         search: debouncedSearch || undefined,
-        role: roleFilter || undefined,
-      });
+      };
+      
+      if (roleFilter && roleFilter !== 'all') {
+        params.role = roleFilter;
+      }
+      
+      const response: UsersResponse = await usersApi.list(params);
       
       if (response.success) {
-        setItems(response.data);
+        setUsers(response.data);
         setTotalPages(response.meta?.last_page || 1);
       }
     } catch (error) {
       toast.error('Erro ao carregar usuários');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchData();
-  }, [currentPage, debouncedSearch, roleFilter]);
+    if (!currentUser || !isAdmin) return;
+    fetchUsers();
+  }, [currentPage, debouncedSearch, roleFilter, currentUser, isAdmin]);
+
+  if (authLoading || !isAdmin)
+    return (
+      <div className="flex justify-center items-center h-[60vh] text-lg text-muted-foreground">
+        Carregando...
+      </div>
+    );
 
   const openDeleteDialog = (item: UserWithBookings) => {
     setDeletingItem(item);
@@ -71,11 +93,17 @@ export default function AdminUsers() {
   };
 
   const handleRoleChange = async (id: string, role: User['role']) => {
+    // Não permitir alterar role do próprio usuário para não-admin
+    if (currentUser?.id === id && role !== 'admin') {
+      toast.error('Não é possível remover seu próprio acesso de admin');
+      return;
+    }
+
     setIsSaving(true);
     try {
       await usersApi.updateRole(id, role);
       toast.success('Role atualizada com sucesso');
-      fetchData();
+      fetchUsers();
     } catch (error) {
       toast.error('Erro ao atualizar role');
     } finally {
@@ -86,12 +114,26 @@ export default function AdminUsers() {
   const handleDelete = async () => {
     if (!deletingItem) return;
     
+    // Não permitir deletar a si mesmo
+    if (currentUser?.id === deletingItem.id) {
+      toast.error('Não é possível excluir sua própria conta');
+      setIsDeleteDialogOpen(false);
+      return;
+    }
+    
+    // Não permitir deletar outros admins
+    if (deletingItem.role === 'admin') {
+      toast.error('Não é possível excluir outros administradores');
+      setIsDeleteDialogOpen(false);
+      return;
+    }
+    
     setIsSaving(true);
     try {
       await usersApi.delete(deletingItem.id);
       toast.success('Usuário excluído com sucesso');
       setIsDeleteDialogOpen(false);
-      fetchData();
+      fetchUsers();
     } catch (error) {
       toast.error('Erro ao excluir usuário');
     } finally {
@@ -134,12 +176,14 @@ export default function AdminUsers() {
         <Select
           value={item.role}
           onValueChange={(value: User['role']) => handleRoleChange(item.id, value)}
-          disabled={isSaving}
+          disabled={isSaving || currentUser?.id === item.id}
         >
-          <SelectTrigger className="w-32 h-8">
-            <Badge className={roleColors[item.role]}>
-              {roleLabels[item.role]}
-            </Badge>
+          <SelectTrigger className="w-32 h-8 px-2">
+            <div className="w-full flex items-center gap-2">
+              <Badge className={roleColors[item.role]}>
+                {roleLabels[item.role]}
+              </Badge>
+            </div>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="user">Usuário</SelectItem>
@@ -180,7 +224,7 @@ export default function AdminUsers() {
               <SelectValue placeholder="Filtrar por role" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todos os roles</SelectItem>
+              <SelectItem value="all">Todos os roles</SelectItem>
               <SelectItem value="user">Usuário</SelectItem>
               <SelectItem value="moderator">Moderador</SelectItem>
               <SelectItem value="admin">Admin</SelectItem>
@@ -190,8 +234,8 @@ export default function AdminUsers() {
 
         <DataTable
           columns={columns}
-          data={items}
-          isLoading={isLoading}
+          data={users}
+          isLoading={loading}
           searchValue={search}
           onSearchChange={setSearch}
           searchPlaceholder="Buscar por nome ou email..."
@@ -203,7 +247,14 @@ export default function AdminUsers() {
               variant="ghost" 
               size="icon" 
               onClick={() => openDeleteDialog(item)}
-              disabled={item.role === 'admin'}
+              disabled={item.role === 'admin' || currentUser?.id === item.id}
+              title={
+                currentUser?.id === item.id 
+                  ? "Não é possível excluir sua própria conta" 
+                  : item.role === 'admin' 
+                  ? "Não é possível excluir outros administradores" 
+                  : "Excluir usuário"
+              }
             >
               <Trash2 className="w-4 h-4 text-destructive" />
             </Button>
@@ -217,12 +268,37 @@ export default function AdminUsers() {
           <DialogHeader>
             <DialogTitle>Confirmar exclusão</DialogTitle>
           </DialogHeader>
-          <p>
-            Tem certeza que deseja excluir o usuário <strong>{deletingItem?.full_name || deletingItem?.email}</strong>?
-            Esta ação não pode ser desfeita e irá remover todas as reservas associadas.
-          </p>
+          {deletingItem && (
+            <>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <Avatar className="w-12 h-12">
+                    <AvatarImage src={deletingItem.avatar_url || undefined} />
+                    <AvatarFallback className="bg-primary/10 text-primary">
+                      {getInitials(deletingItem.full_name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="font-medium">{deletingItem.full_name || 'Sem nome'}</p>
+                    <p className="text-sm text-muted-foreground">{deletingItem.email}</p>
+                    <Badge className={roleColors[deletingItem.role]}>
+                      {roleLabels[deletingItem.role]}
+                    </Badge>
+                  </div>
+                </div>
+                
+                <p className="text-sm text-muted-foreground">
+                  Reservas: {deletingItem.bookings_count || 0}
+                </p>
+                
+                <p className="text-sm text-red-600 font-medium">
+                  ⚠️ Esta ação não pode ser desfeita e irá remover todas as reservas associadas.
+                </p>
+              </div>
+            </>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)} disabled={isSaving}>
               Cancelar
             </Button>
             <Button variant="destructive" onClick={handleDelete} disabled={isSaving}>

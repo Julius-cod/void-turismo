@@ -10,14 +10,14 @@ class UserResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'email' => $this->email,
             'full_name' => $this->full_name,
-            'phone' => $this->phone,
+            'email' => $this->email,
             'avatar_url' => $this->avatar_url,
-            'preferred_language' => $this->preferred_language,
             'role' => $this->role,
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at
+            'email_verified_at' => $this->email_verified_at,
+            'created_at' => $this->created_at->toISOString(),
+            'updated_at' => $this->updated_at->toISOString(),
+            'bookings_count' => $this->bookings_count ?? 0,
         ];
     }
 }

@@ -10,6 +10,7 @@ import { LanguageProvider } from "@/contexts/LanguageContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AdminRoute from "@/components/AdminRoute";
 
+
 // Pages
 import Index from "./pages/Index";
 import Login from "./pages/Login";
@@ -52,8 +53,8 @@ const App = () => {
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
                 <Route path="/discover" element={<Discover />} />
-                <Route path="/stays" element={<Stays />} />
-                <Route path="/stays/:slug" element={<StayDetail />} />
+                <Route path="/accommodations" element={<Stays />} />
+                <Route path="/accommodations/:slug" element={<StayDetail />} />
                 <Route path="/experiences" element={<Experiences />} />
                 <Route path="/experiences/:slug" element={<ExperienceDetail />} />
                 <Route path="/cities" element={<Cities />} />
@@ -135,6 +136,8 @@ const App = () => {
                     </AdminRoute>
                   }
                 />
+
+              
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />

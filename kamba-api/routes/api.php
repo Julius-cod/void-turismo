@@ -7,11 +7,11 @@ use App\Http\Controllers\Admin\DestinationController;
 use App\Http\Controllers\Admin\AccommodationController;
 use App\Http\Controllers\Admin\ExperienceController;
 use App\Http\Controllers\BookingController;
-use App\Http\Controllers\Admin\AdminBookingController;
 use App\Http\Controllers\FavoriteController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\UploadController;
 
 
 Route::prefix('auth')->group(function () {
@@ -26,6 +26,10 @@ Route::prefix('auth')->group(function () {
 });
 
 
+
+//upload de imagens 
+Route::post('/admin/upload', [UploadController::class, 'store']);
+
 //rotas de destino
 
 Route::get('destinations',[DestinationController::class,'index']);
@@ -33,12 +37,13 @@ Route::get('destinations/{slug}',[DestinationController::class,'show']);
 
 
 // Admin
-Route::middleware(['auth:sanctum','is_admin'])->prefix('admin')->group(function () {
+Route::prefix('admin')->group(function () {
     Route::post('destinations', [DestinationController::class, 'store']);
     Route::put('destinations/{id}', [DestinationController::class, 'update']);
     Route::delete('destinations/{id}', [DestinationController::class, 'destroy']);
 });
 
+Route::get('destinations/featured', [DestinationController::class, 'featured']);
 
 //rotas de acomodations
 
@@ -47,11 +52,17 @@ Route::get('accommodations',[AccommodationController::class,'index']);
 Route::get('accommodations/{slug}',[AccommodationController::class,'show']);
 
 // Admin
-Route::middleware(['auth:sanctum','is_admin'])->prefix('admin')->group(function () {
-    Route::post('accommodations',[AccommodationController::class,'store']);
-    Route::put('accommodations/{id}',[AccommodationController::class,'update']);
-    Route::delete('accommodations/{id}',[AccommodationController::class,'destroy']);
+
+
+Route::prefix('admin')->middleware(['auth:sanctum'])->group(function () {
+    Route::apiResource('accommodations', AccommodationController::class);
 });
+
+/*
+Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    Route::post('accommodations', [AccommodationController::class, 'store']);
+});
+*/
 
 // rotas de experiences
 
@@ -68,18 +79,22 @@ Route::middleware(['auth:sanctum','is_admin'])->prefix('admin')->group(function 
 
 //rotas de booking(reserva)
 
-// Usuário
 Route::middleware('auth:sanctum')->group(function(){
-    Route::get('bookings',[BookingController::class,'index']);
-    Route::get('bookings/{id}',[BookingController::class,'show']);
-    Route::post('bookings',[BookingController::class,'store']);
-    Route::put('bookings/{id}/cancel',[BookingController::class,'cancel']);
+    // Minhas reservas
+    Route::get('/bookings', [BookingController::class, 'index']);
+    Route::get('/bookings/{id}', [BookingController::class, 'show']);
+    Route::post('/bookings', [BookingController::class, 'store']);
+    Route::put('/bookings/{id}/cancel', [BookingController::class, 'cancel']);
+    Route::post('/bookings/check-availability', [BookingController::class, 'checkAvailability']);
+    // Verificar disponibilidade
+    Route::get('/bookings/check-availability', [BookingController::class, 'checkAvailability']);
 });
 
-// Admin
-Route::middleware(['auth:sanctum','is_admin'])->prefix('admin')->group(function(){
-    Route::get('bookings',[AdminBookingController::class,'index']);
-    Route::put('bookings/{id}/status',[AdminBookingController::class,'updateStatus']);
+// Admin Bookings
+Route::prefix('admin')->middleware(['auth:sanctum', 'is_admin'])->group(function(){
+    Route::get('bookings', [\App\Http\Controllers\Admin\BookingController::class, 'index']);
+    Route::get('bookings/{id}', [\App\Http\Controllers\Admin\BookingController::class, 'show']);
+    Route::post('bookings/{id}/status', [\App\Http\Controllers\Admin\BookingController::class, 'updateStatus']);
 });
 
 //rota dos favoritos do usuario

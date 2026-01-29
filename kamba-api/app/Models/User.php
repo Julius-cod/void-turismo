@@ -19,4 +19,20 @@ class User extends Authenticatable
     ];
 
     protected $hidden = ['password','remember_token'];
+
+     public function bookings()
+    {
+        return $this->hasMany(Booking::class);
+    }
+
+    // Se quiser também relacionamentos específicos
+    public function accommodationBookings()
+    {
+        return $this->hasMany(Booking::class)->whereNotNull('accommodation_id');
+    }
+
+    public function experienceBookings()
+    {
+        return $this->hasMany(Booking::class)->whereNotNull('experience_id');
+    }
 }
